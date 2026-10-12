@@ -130,6 +130,8 @@ fun StageRail(
     selected: MainSection,
     visibleSections: Set<MainSection>,
     onSelect: (MainSection) -> Unit,
+    sportsSelected: Boolean = false,
+    onOpenSports: (() -> Unit)? = null,
     count: (MainSection) -> Int?,
     detail: @Composable (MainSection) -> String?,
     profileName: String,
@@ -258,11 +260,23 @@ fun StageRail(
                     trailing = if (counts) count(section)?.let { NumberFormat.getIntegerInstance(LocalConfiguration.current.locales[0]).format(it) } else null,
                     detail = if (details) detail(section) else null,
                     open = open,
-                    active = section == selected ||
-                        (section == MainSection.MORE && selected == MainSection.SETTINGS),
+                    active = !sportsSelected && (section == selected ||
+                        (section == MainSection.MORE && selected == MainSection.SETTINGS)),
                     onClick = { onSelect(section) },
-                    modifier = if (section == focusSection) Modifier.focusRequester(selectedItemFocusRequester) else Modifier,
+                    modifier = if (!sportsSelected && section == focusSection) Modifier.focusRequester(selectedItemFocusRequester) else Modifier,
                 )
+                if ((section == MainSection.HOME || (MainSection.HOME !in items && section == MainSection.SEARCH)) && onOpenSports != null) {
+                    RailItem(
+                        icon = OwnTVIcon.CALENDAR,
+                        label = stringResource(R.string.sports_title),
+                        trailing = null,
+                        detail = null,
+                        open = open,
+                        active = sportsSelected,
+                        onClick = onOpenSports,
+                        modifier = if (sportsSelected) Modifier.focusRequester(selectedItemFocusRequester) else Modifier,
+                    )
+                }
             }
             // Full height: the profile sits at the bottom, after the last separator.
             if (full) Spacer(Modifier.weight(1f))

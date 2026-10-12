@@ -459,6 +459,26 @@ class CustomizeItemsViewModel(
         }
     }
 
+    val addition = CategoryAdditionSession(viewModelScope, customize, customCategoryDao)
+    fun addChannels(row: CustomizeItemRow) {
+        val ci = _catInfo.value ?: return
+        if (ci.mediaType != MediaType.LIVE) return
+        val owner = ctx.value.profileId
+        val anchor = span.anchorKey.value
+        val end = span.endKey.value ?: row.key
+        val range = span.mode.value == SpanSelector.Mode.MOVE && anchor != null
+        viewModelScope.launch {
+            val snapshot = customCategoryDao.liveSelectionKeys(owner, ci.contextKey, ci.sourceIds, ci.categoryId)
+                .filter { _visibilityFilter.value.accepts(it.stableKey in customizeForItems.value.hiddenItems) }
+                .map { it.itemId to it.stableKey }
+            val startIndex = if (range) snapshot.indexOfFirst { it.second == anchor } else snapshot.indexOfFirst { it.second == row.key }
+            val endIndex = if (range) snapshot.indexOfFirst { it.second == end } else startIndex
+            if (startIndex < 0 || endIndex < 0 || ctx.value.profileId != owner) return@launch
+            val selected = snapshot.subList(minOf(startIndex, endIndex), maxOf(startIndex, endIndex) + 1)
+            addition.open(owner, ci.sourceIds, emptyList(), selected.map { it.first }, listOf(row.displayName), moveTargets.value)
+        }
+    }
+
     // --- Move to… (issue #87) ---
 
     /** The user's custom categories (with member counts) minus THIS category — the "Move to…"

@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -90,6 +92,12 @@ fun CustomizeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val vm: CustomizeViewModel = koinViewModel()
     val section by vm.section.collectAsStateWithLifecycle()
     val rows by vm.rows.collectAsStateWithLifecycle()
+    val categoryQuery by vm.categoryQuery.collectAsStateWithLifecycle()
+    var editingCategorySearch by remember { mutableStateOf(false) }
+    val mergeSelection by vm.mergeSelection.collectAsStateWithLifecycle()
+    val additionState by vm.addition.state.collectAsStateWithLifecycle()
+    val rulesCategory by vm.rulesCategory.collectAsStateWithLifecycle()
+    val liveRules by vm.liveRules.collectAsStateWithLifecycle()
     val hiddenChannels by vm.hiddenChannels.collectAsStateWithLifecycle()
     val hideNewCategories by vm.hideNewCategories.collectAsStateWithLifecycle()
     val currentSort by vm.currentSort.collectAsStateWithLifecycle()
@@ -137,7 +145,7 @@ fun CustomizeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     // focus doesn't always jump back to the Live TV section chip.
     var dialogReturn by tv.own.owntv.ui.components.rememberDialogFocusRestore(
         anyDialogOpen = showNewCatPicker || showSortPicker || showFilterPicker || showMoreMenu || restoringDefaults || renaming != null || creatingCategory ||
-            deletingCategory != null || rangeEnd != null || editingPin != null,
+            deletingCategory != null || rangeEnd != null || editingPin != null || additionState != null || rulesCategory != null || editingCategorySearch,
     )
 
     // CH+- key paging for the category list (same as Live/Movies/Series browse). The modifier consumes
@@ -158,7 +166,7 @@ fun CustomizeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val rowFocusers = remember { mutableMapOf<String, FocusRequester>() }
     // LazyColumn items before the category rows (hidden-items header + hidden rows + "Categories"
     // header) — the offset that maps a category index to its LazyColumn item index.
-    val headerOffset = if (hiddenChannels.isNotEmpty()) hiddenChannels.size + 2 else 0
+    val headerOffset = (if (hiddenChannels.isNotEmpty()) hiddenChannels.size + 2 else 1) + (if (section == MediaType.LIVE) 4 else 0)
 
     // Wait for the stored lock state before showing anything (no unlocked flash).
     val oldInset = Modifier.padding(start = 6.dp, end = 6.dp, bottom = 6.dp, top = tv.own.owntv.features.shell.components.StageContentTop)
@@ -351,6 +359,21 @@ fun CustomizeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                             )
                         }
                     }
+                    if (section == MediaType.LIVE) {
+                        item { StageSettingRow(icon = OwnTVIcon.SEARCH, title = stringResource(R.string.common_search), desc = null,
+                            value = SettingValue.Action(categoryQuery.ifBlank { stringResource(R.string.common_search) }), onClick = { editingCategorySearch = true },
+                            modifier = if (hiddenChannels.isEmpty()) Modifier.upTo(firstFocus) else Modifier,
+                            help = SettingHelp(stringResource(R.string.common_search), stringResource(R.string.category_add_description))) }
+                        item { StageSettingRow(icon = OwnTVIcon.ADD, title = stringResource(R.string.category_add_title), desc = null,
+                            value = SettingValue.Action(stringResource(R.string.common_number_grouped, mergeSelection.size)), onClick = { vm.addGroups() }, enabled = mergeSelection.isNotEmpty() || rangeAnchorKey != null,
+                            help = SettingHelp(stringResource(R.string.category_add_title), stringResource(R.string.category_add_description))) }
+                        item { StageSettingRow(icon = OwnTVIcon.LAYERS, title = stringResource(R.string.category_add_select_all), desc = stringResource(R.string.category_add_selection_scope),
+                            value = SettingValue.Action(stringResource(R.string.common_ok)), onClick = vm::selectAllForMerge,
+                            help = SettingHelp(stringResource(R.string.category_add_select_all), stringResource(R.string.category_add_selection_scope))) }
+                        item { StageSettingRow(icon = OwnTVIcon.CLOSE, title = stringResource(R.string.category_add_clear), desc = null,
+                            value = SettingValue.Action(stringResource(R.string.common_ok)), onClick = vm::clearMergeSelection,
+                            help = SettingHelp(stringResource(R.string.category_add_clear), stringResource(R.string.category_add_description))) }
+                    }
                     item { StageSettingsHeading(stringResource(R.string.settings_customize_categories), rows.size, first = hiddenChannels.isEmpty()) }
 
                     if (rows.isEmpty()) {
@@ -359,7 +382,7 @@ fun CustomizeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     itemsIndexed(rows, key = { _, r -> r.key }) { index, row ->
                         val inMoveRange = rangeAnchorKey != null && rangeMode == SpanSelector.Mode.MOVE
                         val inRenameRange = rangeAnchorKey != null && rangeMode == SpanSelector.Mode.RENAME
-                        val isInSpan = row.key in rangeSelectedKeys || renaming?.key == row.key || deletingCategory?.key == row.key
+                        val isInSpan = row.key in rangeSelectedKeys || row.key in mergeSelection || renaming?.key == row.key || deletingCategory?.key == row.key
                         CategoryRow(
                             row = row,
                             inRangeMode = rangeAnchorKey != null && rangeMode == SpanSelector.Mode.HIDE,
@@ -399,6 +422,9 @@ fun CustomizeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                                     rangeEnd = row
                                 }
                             },
+                            onAdd = if (section == MediaType.LIVE && row.categoryId != null) ({ dialogReturn = rowFocusers[row.key]; vm.addGroups(row) }) else null,
+                            onSelect = if (section == MediaType.LIVE && row.categoryId != null) ({ vm.toggleMergeSelection(row) }) else null,
+                            onManageRules = if (section == MediaType.LIVE && row.categoryId == null) ({ dialogReturn = rowFocusers[row.key]; vm.manageRules(row) }) else null,
                             onOpenItems = { itemsReturnKey = row.key; vm.openItems(row) },
                         )
                     }
@@ -406,6 +432,31 @@ fun CustomizeScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             }
         },
     )
+
+    if (editingCategorySearch) TextInputDialog(title = stringResource(R.string.common_search), initial = categoryQuery,
+        onConfirm = { vm.setCategoryQuery(it); editingCategorySearch = false }, onDismiss = { editingCategorySearch = false })
+    AddToCustomCategoryFlow(vm.addition, onSaved = vm::clearMergeSelection)
+    rulesCategory?.let { category ->
+        val rulesFocus = remember(category.key) { FocusRequester() }
+        LaunchedEffect(category.key) { runCatching { rulesFocus.requestFocus() } }
+        tv.own.owntv.ui.stage.StagePopup(title = category.displayName, body = stringResource(R.string.category_add_manage), width = 880.mpx,
+            onDismiss = { vm.manageRules(null) }, buttons = {
+                OwnTVButton(stringResource(R.string.common_back), onClick = { vm.manageRules(null) }, modifier = Modifier.focusRequester(rulesFocus))
+            }) {
+            LazyColumn(modifier = Modifier.heightIn(max = 420.mpx)) {
+                items(liveRules.filter { it.rule.ruleType != "CHANNEL" }, key = { it.rule }) { status ->
+                    val rule = status.rule
+                    val label = listOf(rule.displayName, vm.sourceName(rule.sourceId)).filter { it.isNotBlank() }.joinToString(stringResource(R.string.settings_customize_metadata_separator))
+                    tv.own.owntv.ui.stage.StagePopupOption(title = label,
+                        subtitle = listOfNotNull(
+                            if (!status.available) stringResource(R.string.category_add_unavailable) else null,
+                            stringResource(if (rule.ruleType == "GROUP") R.string.content_remove_from_category else R.string.settings_customize_show),
+                        ).joinToString(stringResource(R.string.settings_customize_metadata_separator)),
+                        onClick = { vm.removeRule(rule) }, leading = { tv.own.owntv.ui.stage.StagePopupIcon(if (rule.ruleType == "GROUP") OwnTVIcon.CLOSE else OwnTVIcon.ADD) })
+                }
+            }
+        }
+    }
 
     if (showMoreMenu) {
         PickerDialog(
@@ -657,14 +708,21 @@ private fun CategoryRow(
     onHideLongPress: () -> Unit,
     onPickRangeEnd: () -> Unit,
     onOpenItems: () -> Unit,
+    onAdd: (() -> Unit)? = null,
+    onSelect: (() -> Unit)? = null,
+    onManageRules: (() -> Unit)? = null,
 ) {
     val meta = listOfNotNull(
         row.hidden.takeIf { it }?.let { stringResource(R.string.settings_customize_hidden) },
         row.renamed.takeIf { it }?.let { stringResource(R.string.settings_customize_was, row.originalName) },
         row.providerName,
+        row.channelCount?.let { pluralStringResource(R.plurals.content_live_channel_count, it, it) },
     ).joinToString(stringResource(R.string.settings_customize_metadata_separator))
     // A held OK on a Move, Rename or Hide action anchors a span; a normal press on a second row picks its end.
-    val actions = listOf(
+    val actions = listOfNotNull(
+        onAdd?.let { StageAction(OwnTVIcon.ADD, stringResource(R.string.category_add_title), it, onMoveLongPress) },
+        onSelect?.let { StageAction(OwnTVIcon.LAYERS, stringResource(R.string.category_add_select), it) },
+        onManageRules?.let { StageAction(OwnTVIcon.FOLDER, stringResource(R.string.category_add_manage), it) },
         StageAction(OwnTVIcon.PAGE_TOWARD_FIRST, stringResource(R.string.settings_customize_move_top), onMoveTop, onMoveLongPress),
         StageAction(OwnTVIcon.CHEVRON_UP, stringResource(R.string.settings_row_menu_move_up), onMoveUp, onMoveLongPress),
         StageAction(OwnTVIcon.CHEVRON_DOWN, stringResource(R.string.settings_row_menu_move_down), onMoveDown, onMoveLongPress),

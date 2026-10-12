@@ -5,6 +5,10 @@ import org.koin.core.module.dsl.singleOf
 import org.koin.core.module.dsl.viewModelOf
 import tv.own.owntv.features.more.MoreCountsViewModel
 import tv.own.owntv.features.shell.RailCountsViewModel
+import tv.own.owntv.features.sports.SportsPreferencesStore
+import tv.own.owntv.features.sports.SportsApi
+import tv.own.owntv.features.sports.SportsGuideReader
+import tv.own.owntv.features.sports.SportsViewModel
 import org.koin.dsl.module
 import tv.own.owntv.features.customize.CustomizeItemsViewModel
 import tv.own.owntv.features.customize.CustomizeViewModel
@@ -54,6 +58,10 @@ val appModule = module {
     // asking the provider the same question.
     singleOf(::LiveEpgReader)
     singleOf(::GuideReader)
+    singleOf(::SportsPreferencesStore)
+    singleOf(::SportsApi)
+    singleOf(::SportsGuideReader)
+    viewModelOf(::SportsViewModel)
     singleOf(::SearchReader)
     singleOf(::HomeFeedReader)
     // Process-long scope for work that must outlive the screen that started it (a first-run restore).

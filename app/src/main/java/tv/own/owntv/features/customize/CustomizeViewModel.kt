@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -45,6 +46,7 @@ data class CustomizeCatRow(
     val hidden: Boolean,
     val renamed: Boolean,
     val providerName: String? = null,
+    val channelCount: Int? = null,
 )
 
 enum class CustomizeVisibilityFilter {
@@ -125,10 +127,16 @@ class CustomizeViewModel(
         _section.value = type
         // A pending range belongs to the section it was started in — switching sections cancels it.
         span.cancel()
+        clearMergeSelection()
+        addition.dismiss()
     }
 
+    private val _categoryQuery = MutableStateFlow("")
+    val categoryQuery = _categoryQuery.asStateFlow()
+    fun setCategoryQuery(query: String) { _categoryQuery.value = query.trim() }
+
     /** Categories of the selected section, in their customized order, including hidden ones. */
-    val rows: StateFlow<List<CustomizeCatRow>> = combine(_section, ctx, _visibilityFilter) { s, c, filter ->
+    private val allRows: StateFlow<List<CustomizeCatRow>> = combine(_section, ctx, _visibilityFilter) { s, c, filter ->
         Triple(s, c, filter)
     }.flatMapLatest { (type, c, filter) ->
             if (c.profileId < 0) flowOf(emptyList())
@@ -140,7 +148,7 @@ class CustomizeViewModel(
                     sourceDao.observeForProfile(c.profileId),
                     profileDao.observeById(c.profileId),
                 ) { cats, cust, sources, profile ->
-                    val providerNames = sources.associate { it.id to it.name }.takeIf { sourceIds.size > 1 }
+                    val providerNames = sources.associate { it.id to it.name }
                     val orderIndex = cust.categoryOrder.withIndex().associate { (i, k) -> k to i }
                     // Provider folders + the user's custom combined categories (#87) in ONE list, so
                     // hide/rename/reorder apply uniformly (their keys share the CustomizeKeys
@@ -170,7 +178,7 @@ class CustomizeViewModel(
                             displayName = cust.categoryNames[key] ?: cat.name,
                             hidden = key in cust.hiddenCategories,
                             renamed = key in cust.categoryNames,
-                            providerName = providerNames?.get(cat.sourceId),
+                            providerName = providerNames[cat.sourceId],
                         )
                     }
                     val (pinned, rest) = entries.partition { it.key in orderIndex }
@@ -180,6 +188,21 @@ class CustomizeViewModel(
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val groupCounts = ctx.flatMapLatest { c ->
+        customCategoryDao.observeLiveProviderCounts(c.sourceIdsFor(MediaType.LIVE))
+    }
+    private val combinedCounts = combine(ctx, allRows) { c, rows -> c to rows.filter { it.categoryId == null }.map { it.key } }
+        .flatMapLatest { (c, keys) ->
+            customCategoryDao.observeCountsByContexts(c.profileId, MediaType.LIVE, keys, c.sourceIdsFor(MediaType.LIVE))
+        }
+    val rows = combine(allRows, _categoryQuery, groupCounts, combinedCounts, _section) { list, query, groups, customs, section ->
+        val groupCounts = groups.associate { it.categoryId to it.itemCount }
+        val customCounts = customs.associate { it.contextKey to it.count }
+        list.filter { query.isBlank() || it.displayName.contains(query, ignoreCase = true) || it.providerName.orEmpty().contains(query, ignoreCase = true) }
+            .map { row -> row.copy(channelCount = if (section != MediaType.LIVE) null else
+                if (row.categoryId != null) groupCounts[row.categoryId] ?: 0 else customCounts[row.key] ?: 0) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // --- Span selection (shared machinery, see SpanSelector.kt) ---
 
@@ -260,6 +283,54 @@ class CustomizeViewModel(
         )
     }
 
+    val addition = CategoryAdditionSession(viewModelScope, customize, customCategoryDao)
+    private val _mergeSelection = MutableStateFlow<Set<String>>(emptySet())
+    val mergeSelection = _mergeSelection.asStateFlow()
+
+    fun toggleMergeSelection(row: CustomizeCatRow) {
+        if (row.categoryId == null) return
+        _mergeSelection.update { if (row.key in it) it - row.key else it + row.key }
+    }
+    fun selectAllForMerge() { _mergeSelection.value = rows.value.filter { it.categoryId != null }.mapTo(mutableSetOf()) { it.key } }
+    fun clearMergeSelection() { _mergeSelection.value = emptySet(); span.cancel() }
+
+    fun addGroups(row: CustomizeCatRow? = null) {
+        if (_section.value != MediaType.LIVE) return
+        val current = allRows.value
+        val rangeEnd = span.endKey.value?.let { key -> current.firstOrNull { it.key == key } } ?: row ?: current.firstOrNull { it.key == span.anchorKey.value }
+        val keys = if (span.mode.value == SpanSelector.Mode.MOVE && rangeEnd != null)
+            span.keysInRange(rangeEnd)?.toSet() ?: emptySet() else _mergeSelection.value
+        val selected = current.filter { it.categoryId != null && it.key in keys }
+            .ifEmpty { listOfNotNull(row?.takeIf { it.categoryId != null }) }
+        val c = ctx.value
+        addition.open(c.profileId, c.sourceIdsFor(MediaType.LIVE), selected.mapNotNull { it.categoryId }, emptyList(),
+            selected.map { it.displayName },
+            allRows.value.filter { it.categoryId == null }.map { MoveTarget(it.key, it.displayName, 0) })
+    }
+
+    private val _rulesCategory = MutableStateFlow<CustomizeCatRow?>(null)
+    val rulesCategory = _rulesCategory.asStateFlow()
+    val liveRules = combine(ctx, _rulesCategory) { c, row -> c to row }.flatMapLatest { (c, row) ->
+        if (row == null) flowOf(emptyList()) else customCategoryDao.observeLiveRuleAvailability(c.profileId, row.key)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    fun manageRules(row: CustomizeCatRow?) { _rulesCategory.value = row }
+    fun removeRule(rule: tv.own.owntv.core.database.entity.CustomCategoryLiveRuleEntity) {
+        viewModelScope.launch { customCategoryDao.deactivateLiveRule(rule) }
+    }
+    fun sourceName(id: Long): String = ctx.value.sources.firstOrNull { it.id == id }?.name.orEmpty()
+
+    init {
+        viewModelScope.launch {
+            ctx.map { it.profileId to it.sourceIdsFor(MediaType.LIVE) }.distinctUntilChanged().collect {
+                clearMergeSelection()
+                addition.dismiss()
+                manageRules(null)
+                closeItems()
+            }
+        }
+    }
+
+
     // --- custom combined categories (issue #87) ---
 
     /** Creates a custom category for the selected section — the "＋ New category" pill. */
@@ -286,6 +357,7 @@ class CustomizeViewModel(
             val formerMemberKeys = customCategoryDao.stableItemKeys(pid, row.key).toSet()
             // 1) Room: drop the category's membership + its content_order rows (the category's own
             //    rail-order rows ride the same contextKey as the browse screens' reorder).
+            customCategoryDao.deactivateLiveContext(pid, row.key)
             customCategoryDao.clearContext(pid, type, row.key)
             contentOrderDao.clearContext(pid, type, row.key)
             // 2) DataStore: remove the definition + any hide/rename pins on it.

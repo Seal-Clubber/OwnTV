@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Broadcaster brand names supplied by the user; shared across interface languages. -->
+    <string-array name="sports_quick_channels_tr" translatable="false">
+        <item>beIN Sports</item>
+        <item>beIN Sports 1</item>
+        <item>beIN Sports 2</item>
+        <item>beIN Sports 3</item>
+        <item>beIN Sports 4</item>
+        <item>beIN Sports 5</item>
+        <item>beIN Sports MAX 1</item>
+        <item>beIN Sports MAX 2</item>
+        <item>beIN Sports 4K</item>
+        <item>beIN Sports Haber</item>
+        <item>TOD</item>
+        <item>beIN CONNECT</item>
+        <item>Digiturk Play</item>
+        <item>TRT 1</item>
+        <item>TRT Spor</item>
+        <item>TRT Spor Yıldız</item>
+        <item>TRT Spor 3</item>
+        <item>tabii</item>
+        <item>tabii Spor</item>
+        <item>tabii Spor 1</item>
+        <item>tabii Spor 2</item>
+        <item>tabii Spor 3</item>
+        <item>tabii Spor 4</item>
+        <item>tabii Spor 5</item>
+        <item>tabii Spor 6</item>
+        <item>S Sport</item>
+        <item>S Sport 2</item>
+        <item>S Sport Plus</item>
+        <item>A Spor</item>
+        <item>ATV</item>
+        <item>A2</item>
+        <item>TV8</item>
+        <item>TV8.5</item>
+        <item>EXXEN</item>
+        <item>Tivibu Spor</item>
+        <item>Tivibu Spor 2</item>
+        <item>Tivibu Spor 3</item>
+        <item>Tivibu Spor 4</item>
+        <item>Spor Smart</item>
+        <item>Spor Smart 2</item>
+    </string-array>
+    <string-array name="sports_quick_channels_nl" translatable="false">
+        <item>Ziggo Sport</item>
+        <item>Ziggo Sport 1</item>
+        <item>Ziggo Sport 2</item>
+        <item>Ziggo Sport 3</item>
+        <item>Ziggo Sport 4</item>
+        <item>Ziggo Sport 5</item>
+        <item>Ziggo Sport 6</item>
+        <item>Ziggo Sport Totaal</item>
+        <item>Ziggo Sport Free</item>
+        <item>Ziggo GO</item>
+        <item>Ziggo Sport Totaal GO</item>
+        <item>ESPN</item>
+        <item>ESPN 1</item>
+        <item>ESPN 2</item>
+        <item>ESPN 3</item>
+        <item>ESPN 4</item>
+        <item>ESPN Watch</item>
+        <item>NOS</item>
+        <item>NOS Live</item>
+        <item>NPO 1</item>
+        <item>NPO 2</item>
+        <item>NPO 3</item>
+        <item>NPO Start</item>
+        <item>NPO Plus</item>
+        <item>Viaplay</item>
+        <item>Viaplay TV</item>
+        <item>Viaplay TV+</item>
+    </string-array>
+</resources>

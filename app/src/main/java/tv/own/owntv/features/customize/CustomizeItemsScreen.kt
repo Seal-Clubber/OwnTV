@@ -83,6 +83,7 @@ fun CustomizeItemsScreen(
 ) {
     val parentVm: CustomizeViewModel = koinViewModel()
     val vm: CustomizeItemsViewModel = koinViewModel()
+    val additionState by vm.addition.state.collectAsStateWithLifecycle()
     val selectedCategory by parentVm.selectedCategory.collectAsStateWithLifecycle()
     val section by parentVm.section.collectAsStateWithLifecycle()
     val isLive = section == MediaType.LIVE
@@ -140,7 +141,7 @@ fun CustomizeItemsScreen(
     // Focus the row that opened a dialog (rename / move) when it closes (a dialog close can land
     // focus on the screen's first focusable otherwise).
     var dialogReturn by tv.own.owntv.ui.components.rememberDialogFocusRestore(
-        anyDialogOpen = showFilterPicker || renaming != null || rangeEnd != null || movingItem != null || creatingCategory,
+        anyDialogOpen = showFilterPicker || renaming != null || rangeEnd != null || movingItem != null || creatingCategory || additionState != null,
     )
     // Focus the first row once the screen opens (rows arrive via paging, so wait for them).
     var firstLanding by remember { mutableStateOf(true) }
@@ -299,6 +300,7 @@ fun CustomizeItemsScreen(
                                     if (vm.finishRenameRange(row) == null) renaming = row
                                 }
                             },
+                            onAdd = if (isLive) ({ dialogReturn = rowFocusers[row.key]; vm.addChannels(row) }) else null,
                             onMove = { dialogReturn = rowFocusers[row.key]; movingItem = row },
                             onRemoveFromCategory = if (catInfo?.isCustom == true) ({ vm.removeFromCategory(row) }) else null,
                             onToggleHidden = { vm.setItemHidden(row, !row.hidden) },
@@ -359,6 +361,8 @@ fun CustomizeItemsScreen(
     // Bulk rename (issue #86): choice popup, rule builder, review, restore-confirm, refusal.
     // Its popups restore D-pad focus to the row that opened the flow when the whole flow closes.
     BulkRenameFlow(vm.bulk, returnFocus = dialogReturn)
+
+    AddToCustomCategoryFlow(vm.addition, onSaved = vm::cancelRange)
 
     // Move to… (issue #87): pick a combined category; "＋ New category…" swaps this dialog for the
     // name prompt, then the move dialog re-opens with the fresh category listed.
@@ -433,6 +437,7 @@ private fun ItemRow(
     onPickRenameEnd: () -> Unit,
     // "Move to…" (issue #87): send this item into a user's combined category.
     onMove: () -> Unit,
+    onAdd: (() -> Unit)? = null,
     // Only in a custom category: take the item out of it alone.
     onRemoveFromCategory: (() -> Unit)?,
     onToggleHidden: () -> Unit,
@@ -451,6 +456,7 @@ private fun ItemRow(
         StageAction(OwnTVIcon.PAGE_TOWARD_LAST, stringResource(R.string.settings_customize_move_bottom), onMoveBottom, onMoveLongPress),
         // Live TV channels get a per-row Rename; Movies/Series rename the whole category from the tool row.
         if (isLive) StageAction(OwnTVIcon.PENCIL, stringResource(R.string.settings_customize_rename), { if (inRenameRange) onPickRenameEnd() else onRename() }, onRenameLongPress) else null,
+        onAdd?.let { StageAction(OwnTVIcon.ADD, stringResource(R.string.category_add_title), it, onMoveLongPress) },
         StageAction(OwnTVIcon.FOLDER, stringResource(R.string.settings_customize_move_to), onMove),
         onRemoveFromCategory?.let { StageAction(OwnTVIcon.CLOSE, stringResource(R.string.content_remove_from_category), it) },
         StageAction(

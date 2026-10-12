@@ -148,6 +148,9 @@ fun OwnTVShell(
     onSwitchProfile: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // A TV-only destination: the shared navigation enum and the mobile app remain compatible.
+    var sportsSelected by androidx.compose.runtime.saveable.rememberSaveable(activeProfileId) { mutableStateOf(false) }
+    LaunchedEffect(selectedSection) { if (selectedSection != MainSection.MORE) sportsSelected = false }
     val colors = OwnTVTheme.colors
     val noSourceLabel = stringResource(R.string.shell_no_source)
     val subtitleLoadFailed = stringResource(R.string.content_subtitle_load_failed)
@@ -156,7 +159,7 @@ fun OwnTVShell(
     val categories = railCategoriesFor(selectedSection)
     // Each destination reports whether content has passed the 8 dp threshold. Keying this state to
     // the section prevents a scrolled screen from leaving the next destination's chrome condensed.
-    var contentScrolled by remember(selectedSection) { mutableStateOf(false) }
+    var contentScrolled by remember(selectedSection, sportsSelected) { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val sidebarFocus = remember { FocusRequester() }
@@ -239,6 +242,7 @@ fun OwnTVShell(
     var vodEntry by remember { mutableStateOf<(() -> Boolean)?>(null) }
     var downloadsEntry by remember { mutableStateOf<(() -> Boolean)?>(null) }
     var moreEntry by remember { mutableStateOf<(() -> Boolean)?>(null) }
+    var sportsEntry by remember { mutableStateOf<(() -> Boolean)?>(null) }
     // More › Settings opens today's Settings at a group, or with its search open (until P10 redraws it).
     var settingsStart by remember { mutableStateOf<tv.own.owntv.features.shell.components.SettingsStart?>(null) }
     // The playlist pill's place on screen, where the playlist menu redraws it above its scrim.
@@ -847,13 +851,13 @@ fun OwnTVShell(
     // too (but never while fullscreen/mini plays).
     // The preview runs on the ExoPlayer live engine, not mpv: stopping only mpv here (as when the preview
     // was mpv) left it decoding and holding a provider connection after a shortcut or deep link out.
-    LaunchedEffect(selectedSection, playerMode) {
+    LaunchedEffect(selectedSection, sportsSelected, playerMode) {
         if (selectedSection != MainSection.LIVE_TV && selectedSection != MainSection.EPG && playerMode == PlayerMode.NONE) liveVm.stopPreview()
-        if (selectedSection != MainSection.HOME || playerMode != PlayerMode.NONE) homeVm.stopPreview()
+        if (sportsSelected || selectedSection != MainSection.HOME || playerMode != PlayerMode.NONE) homeVm.stopPreview()
     }
 
-    LaunchedEffect(selectedSection, playerMode, activeProfileId, activePlaylistId) {
-        if (selectedSection == MainSection.HOME && playerMode == PlayerMode.NONE && (activeProfileId?.let { it >= 0 } == true)) {
+    LaunchedEffect(selectedSection, sportsSelected, playerMode, activeProfileId, activePlaylistId) {
+        if (!sportsSelected && selectedSection == MainSection.HOME && playerMode == PlayerMode.NONE && (activeProfileId?.let { it >= 0 } == true)) {
             homeVm.refresh(activeProfileId)
         }
     }
@@ -1032,6 +1036,7 @@ fun OwnTVShell(
         ) {
           if (isOffline) OfflineBanner()
           val selectFromNav: (MainSection) -> Unit = { section ->
+              sportsSelected = false
               if (trendingSearchActive || section == MainSection.SEARCH) {
                   searchVm.setQuery("")
                   trendingSearchActive = false
@@ -1145,6 +1150,12 @@ fun OwnTVShell(
                         .then(if (stageScreen) Modifier else Modifier.padding(end = 6.dp, bottom = 6.dp)),
                 ) {
                     when {
+                        sportsSelected && selectedSection == MainSection.MORE -> tv.own.owntv.features.sports.SportsScreen(
+                            onPlayChannel = { id -> scope.launch { if (liveVm.ensurePlayingByIdAsync(id)) openFullscreen(MainSection.LIVE_TV) } },
+                            onChildFocused = { focusedLayer = ShellLayer.CONTENT },
+                            onEntryHook = { sportsEntry = it },
+                            modifier = Modifier.fillMaxSize(),
+                        )
                         // Plan Z — the hub the rail's last item now opens. Settings is a row in it.
                         selectedSection == MainSection.MORE -> tv.own.owntv.features.more.MoreScreen(
                             profileName = profileName.ifBlank { stringResource(R.string.common_own_tv_user) },
@@ -1422,7 +1433,7 @@ fun OwnTVShell(
                 weatherInfo = weatherInfo,
                 weatherFahrenheit = weatherFahrenheit,
                 clockColors = clockColors,
-                playlistDownFocusRequester = homeFirstRowFocus.takeIf { selectedSection == MainSection.HOME },
+                playlistDownFocusRequester = homeFirstRowFocus.takeIf { !sportsSelected && selectedSection == MainSection.HOME },
                 onPlaylistPillBounds = { playlistPillBounds = it },
                 modifier = Modifier.align(Alignment.TopEnd).onFocusChanged { clusterFocused = it.hasFocus }.focusGroup(),
             )
@@ -1433,6 +1444,13 @@ fun OwnTVShell(
                 selected = selectedSection,
                 visibleSections = visibleSections,
                 onSelect = selectFromNav,
+                sportsSelected = sportsSelected,
+                onOpenSports = {
+                    sportsSelected = true
+                    trendingSearchActive = false
+                    homeVm.stopPreview()
+                    onSelectSection(MainSection.MORE)
+                },
                 count = { section -> railCounts[section]?.takeIf { it > 0 } },
                 detail = { section -> railDetail(section, railDetails) },
                 profileName = profileName.ifBlank { stringResource(R.string.common_own_tv_user) },
@@ -1443,7 +1461,7 @@ fun OwnTVShell(
                 avatarPath = avatarPath,
                 selectedItemFocusRequester = sidebarFocus,
                 contentFocusRequester = contentAreaFocus,
-                enterContent = when (selectedSection) {
+                enterContent = if (sportsSelected) sportsEntry else when (selectedSection) {
                     MainSection.HOME -> homeEntry
                     MainSection.EPG, MainSection.LIVE_TV -> guideEntry
                     MainSection.MOVIES, MainSection.SERIES -> vodEntry
